@@ -10,7 +10,7 @@ TIMEZONE = dt.timezone(dt.timedelta(hours=3))
 class DataGetter:
 
     @staticmethod
-    async def get_new_data(symbols: List[str], date: Union[str, None]):
+    async def get_new_data(symbols: List[str], date: Union[str, None] = None):
         now = dt.datetime.now()#tz=TIMEZONE)
         connector = VantageConnector(symbols)
 

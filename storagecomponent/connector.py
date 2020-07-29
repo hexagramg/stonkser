@@ -9,26 +9,35 @@ DB = CLIENT['rewampStock']
 
 
 async def find_sequrity(identity: str, upsert=True):
-    document = await DB['sequrities'].find_one({'symbol': identity}, upsert=upsert)
+    document = await DB['sequrities'].find_one({'symbol': identity})
     return document
 
 
 async def insert_sequrity(sequrity: dict):
-    document = await DB['sequrities'].insert_one(sequrity)
+    mapped_dict = {}
+    for key, value in sequrity.items():
+        if '. ' in key:
+            _key = ' '.join(key.split(' ')[1:])
+        else:
+            _key = key
+
+        mapped_dict[_key] = value
+    document = await DB['sequrities'].insert_one(mapped_dict)
     return document
 
 
 async def insert_daily_vantage(vantage_daily: dict, symbol: str):
     sequrity = await find_sequrity(symbol)
-    all_time = {}
+    all_time = []
     _projection = ['date']
     date_cursor = DB['time_series'].find({
         'seq_id': sequrity['_id'],
         'type': 'daily_adjusted'
     }, projection=_projection)
-    for date_doc in await date_cursor.to_list(length=100):
-        all_time |= {date_doc['date']}
+    async for date_doc in date_cursor:
+        all_time.append(date_doc['date'])
 
+    all_time = set(all_time)
     formatted_array = []
     for key, value in vantage_daily.items():
         parsed_date = parser.parse(timestr=key)
@@ -44,9 +53,11 @@ async def insert_daily_vantage(vantage_daily: dict, symbol: str):
                 except KeyError as e:
                     pass
             formatted_array.append(new_dict)
+    if formatted_array:
+        results = await DB['time_series'].insert_many(formatted_array)
+        return results
 
-    results = await DB['time_series'].insert_many(formatted_array)
-    return results
+    return None
 
 
 
