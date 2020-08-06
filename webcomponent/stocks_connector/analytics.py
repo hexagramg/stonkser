@@ -8,7 +8,7 @@ from functools import partial
 from settingscomponent.loader import loop
 COMPACT_DELTA = dt.timedelta(days=99)
 TIMEZONE = dt.timezone(dt.timedelta(hours=3))
-
+LAG = dt.timedelta(minutes=15)
 STATS = {
     'weekly': {
         'year': 52, #weeks delay for yearly stats,
@@ -30,7 +30,7 @@ class DataGetter:
         return data, symbols
 
     @staticmethod
-    async def get_new_data(symbols: List[str], date: Union[datetime, None] = None) -> List[dict]:
+    async def get_new_data(symbols: List[str], date: Union[datetime, None] = None, force_load: bool = False) -> List[dict]:
         now = dt.datetime.now()  # tz=TIMEZONE)
         connector = VantageConnector(symbols)
 
@@ -38,7 +38,7 @@ class DataGetter:
             _data, _symbols = await connector.daily_adjusted('full')
             return _data, _symbols
 
-        if date is None or date < now - COMPACT_DELTA:
+        if date is None or date < now - COMPACT_DELTA or force_load:
             data, _ = await daily_full()
         else:
             data, _ = await connector.daily_adjusted()
@@ -55,6 +55,11 @@ class DataAnalysis:
         return self
 
     def __init__(self, secondary_data: List[dict]): #do not use this
+        """class init
+            args:
+            secondary_data: List[dict]
+                list of necessary symbols to calculate statistics with format from yaml config
+        """
         self.symbols = [sec_d['name'] for sec_d in secondary_data]
         self.secondary = secondary_data
         self.stats = {}
@@ -84,34 +89,56 @@ class DataAnalysis:
 
     @staticmethod
     async def data_load_pipe(date_func: Callable, data_download_func: Callable,
-                             data_save_func: Callable, filter_func: Callable):
+                             data_save_func: Callable):
         date = await date_func()
-        if date is not None:
-            date = date['date']
-        new_data = await data_download_func(date)
-        _ = await data_save_func(new_data[0]) #CAN FALL IF NOTHINGH DOWNLOADED
-        results = await filter_func()
-
-        return results
+        actuality = False
+        if date is not None: #this fragment tests if there is need for downloading full data (caching)
+            date: datetime = date['date']
+            today = datetime.now().date()
+            date_date = date.date()
+            if date_date == today:
+                actuality = True
+        if not actuality:
+            new_data = await data_download_func(date)
+            _ = await data_save_func(new_data[0]) #CAN FALL IF NOTHINGH DOWNLOADED
+            return _
+        return None
 
     async def preload_data_pipe(self):
-        async def preload_with_filter(_filter_func: Callable):
+        """
+        func organizes pipeline for async historical data loading
+        """
+        async def preload_with_filter():
             tasks = []
 
             for symbol in self.symbols:
                 date_func = partial(find_last_record, symbol)
-                data_download_func = partial(DataGetter.get_new_data, [symbol])
+                data_download_func = partial(DataGetter.get_new_data, [symbol], force_load=True)
                 data_save_func = partial(insert_daily_vantage, symbol)
-                filter_func = partial(_filter_func, symbol)
                 pipeline = self.data_load_pipe(date_func, data_download_func,
-                                               data_save_func, filter_func)
+                                               data_save_func)
                 tasks.append(pipeline)
 
             results: List[List[dict]] = await asy.gather(*tasks)
             return results
 
-        self.data_weekly = await preload_with_filter(aggreagate_daily_month)
-        self.data_daily = await preload_with_filter(aggregate_daily)
+        async def apply_filter(func: Callable, date_inclusion=False):
+            tasks = []
+            for paper in self.secondary:
+                symbol = paper['name']
+                if date_inclusion:
+                    date_of_buy = parser.parse(paper['date_of_buy'])
+                    tasks.append(func(symbol, date_of_buy))
+                else:
+                    tasks.append(func(symbol))
+
+            results = await asy.gather(*tasks)
+            return results
+
+        self.preloaded = await preload_with_filter()
+        self.data_weekly = await apply_filter(aggreagate_daily_month)
+        self.data_daily = await apply_filter(aggregate_daily)
+        self.data_dividends = await apply_filter(aggregate_dividends, date_inclusion=True)
 
     async def calc_stats(self):
         def ret_dict(weekly_ts, daily_ts) -> dict:
@@ -125,10 +152,18 @@ class DataAnalysis:
             return result
 
         def extract_difference(chosen, string, price):
-            return chosen[string]['close'] - price
+            return price - chosen[string]['close']
 
         def calc_relative(before, offset):
             return ((before+offset)/before - 1) * 100
+
+        def calc_div_sum(div_data):
+            dividends = 0
+            for point in div_data:
+                dividends += point['dividends']
+
+            return dividends
+
 
         def calc_difference():
             for index, _sec_data in enumerate(self.secondary):
@@ -149,6 +184,11 @@ class DataAnalysis:
 
                 amount = _sec_data['amount']
                 self.stats[name]['buy_a'] = self.stats[name]['buy'] * amount
+
+                dividends = calc_div_sum(self.data_dividends[index])
+                self.stats[name]['roi'] = price + dividends - buy
+                self.stats[name]['roi_a'] = self.stats[name]['roi'] * amount
+                self.stats[name]['roi_r'] = calc_relative(price+dividends, self.stats[name]['buy'])
 
                 self.stats[name]['year_r'] = calc_relative(price, self.stats[name]['year'])
                 self.stats[name]['season_r'] = calc_relative(price, self.stats[name]['season'])

@@ -2,6 +2,7 @@ from settingscomponent.loader import SETTINGS
 import motor.motor_asyncio as mot_asy
 from typing import List, Union, Tuple
 import dateutil.parser as parser
+import asyncio
 from datetime import datetime
 from pymongo import ReturnDocument
 DB_key = SETTINGS['DB']
@@ -59,24 +60,42 @@ async def insert_daily_vantage(symbol: str, vantage_daily: dict, sequrity=None):
         new_time = set(aggregation['dates'])
 
     formatted_array = []
+    replace_array = []
     for key, value in vantage_daily.items():
         parsed_date = parser.parse(timestr=key)
+        new_dict = {
+            'date': parsed_date,
+            'seq_id': sequrity['_id'],
+            'type': 'daily_adjusted'
+        }
+        for _key, _value in value.items():
+            try:
+                new_dict[' '.join(_key.split(' ')[1:])] = float(_value)
+            except KeyError as e:
+                pass
         if parsed_date not in new_time:
-            new_dict = {
-                'date': parsed_date,
-                'seq_id': sequrity['_id'],
-                'type': 'daily_adjusted'
-            }
-            for _key, _value in value.items():
-                try:
-                    new_dict[' '.join(_key.split(' ')[1:])] = float(_value)
-                except KeyError as e:
-                    pass
             formatted_array.append(new_dict)
+        else:
+            replace_array.append(new_dict)
+    results = []
     if formatted_array:
-        results = await DB['time_series'].insert_many(formatted_array)
-        return results
+        inserted = await DB['time_series'].insert_many(formatted_array)
+        results.append(inserted)
+    if replace_array:
+        task_pool = []
+        for replacement in replace_array:
+            task = DB['time_series'].find_one_and_replace(
+                {'date': replacement['date'],
+                 'seq_id': replacement['seq_id'],
+                 'type': replacement['type']},
+                replacement
+            )
+            task_pool.append(task)
+        replaced = await asyncio.gather(*task_pool)
+        results.append(replaced)
 
+    if results:
+        return results
     return None
 
 @extract_symbol
@@ -87,6 +106,11 @@ async def aggreagate_daily_month(symbol: str, sequrity=None):
             'seq_id': sequrity['_id'],
             'type': 'daily_adjusted'
         }},
+        {
+            '$sort': {
+                'date': -1
+            }
+        },
         {
            '$group': {
                '_id': {
@@ -108,6 +132,9 @@ async def aggreagate_daily_month(symbol: str, sequrity=None):
                'volume': {
                    '$sum': '$volume'
                },
+               'dividends': {
+                   '$sum': '$dividend amount'
+               }
            }
         },
         {
@@ -117,9 +144,66 @@ async def aggreagate_daily_month(symbol: str, sequrity=None):
         }
     ]
     cursor = DB['time_series'].aggregate(pipeline)
-    result_list = await cursor.to_list(length=120)
+    result_list = await cursor.to_list(length=160)
     return result_list
 
+
+@extract_symbol
+async def aggregate_dividends(symbol: str, ex_date: datetime, sequrity=None):
+    pipeline = [
+        {
+            '$match': {
+                'seq_id': sequrity['_id'],
+                'type': 'daily_adjusted',
+                'date': {
+                    '$gte': ex_date
+                }
+            }
+        },
+        {
+            '$sort': {
+                'date': -1
+            }
+        },
+        {
+            '$limit': 120
+        },
+        {
+            '$group': {
+                '_id': {
+                    '$dateFromParts': {
+                        'isoWeekYear': {
+                            '$isoWeekYear': '$date'
+                        },
+                        'isoWeek': {
+                            '$isoWeek': '$date'
+                        },
+                    }
+                },
+                'close': {
+                    '$avg': '$adjusted close'
+                },
+                'not_adjusted_close': {
+                    '$avg': '$close'
+                },
+                'volume_avg': {
+                    '$avg': '$volume'
+                },
+                'dividends': {
+                    '$sum': '$dividend amount'
+                }
+            }
+        },
+        {
+            '$sort': {
+                '_id': -1
+            }
+        }
+    ]
+
+    cursor = DB['time_series'].aggregate(pipeline)
+    result_list = await cursor.to_list(length=120)
+    return result_list
 
 @extract_symbol
 async def aggregate_daily(symbol: str, length: int = 120, sequrity=None):

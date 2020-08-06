@@ -20,12 +20,24 @@ async def limiter():
 
 
 class VantageConnector:
-
+    """
+    connector to the Alpha Vantage API library wrapper
+    
+    Attributes:
+        symbols: list of symbols to get info for
+        ts: time series object from the wrapper with the key
+    """
     def __init__(self, symbols: List[str]):
         self.ts = TimeSeries(key=API)
         self.symbols = symbols
 
     async def _get_quote(self, symbol: str):
+        """inner function for getting exact quote
+        Args:
+            symbol (str): the name of the symbol to get quote from AV api
+        Returns:
+            returns dict
+            """
         await limiter()
         data, _ = await self.ts.get_quote_endpoint(symbol)
         return data
@@ -47,4 +59,9 @@ class VantageConnector:
 
     def __del__(self):
         asyncio.ensure_future(self.ts.close())
+
+
+class YFinanceConnector:
+    def __init__(self, symbols: List[srt]):
+        pass
 
