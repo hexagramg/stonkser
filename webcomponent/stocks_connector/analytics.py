@@ -136,7 +136,7 @@ class DataAnalysis:
             return results
 
         self.preloaded = await preload_with_filter()
-        self.data_weekly = await apply_filter(aggreagate_daily_month)
+        self.data_weekly = await apply_filter(aggreagate_daily_week)
         self.data_daily = await apply_filter(aggregate_daily)
         self.data_dividends = await apply_filter(aggregate_dividends, date_inclusion=True)
 
@@ -197,6 +197,43 @@ class DataAnalysis:
                 self.stats[name]['buy_r'] = calc_relative(price, self.stats[name]['buy'])
 
         calc_difference()
+
+
+class DataAnalysisYF:
+
+    @classmethod
+    async def create(cls, secondary_data: List[dict]):
+        self = cls(secondary_data)
+        await self.preload()
+        await self.filter_data()
+        return self
+
+    def __init__(self, secondary_data: List[dict]):
+        self.secondary_data = secondary_data
+        self.symbols = [data['name'] for data in secondary_data]
+
+    async def preload(self):
+        connector = YFinanceConnector(self.symbols)
+        history = connector.get_history()
+        redone_history = []
+
+        for points, symbol in zip(history, self.symbols):
+            for key, value in points.items():
+                converted = key.to_pydatetime()
+                value['symbol'] = symbol
+                value['date'] = converted
+                redone_history.append(value)
+
+        inserted = await save_yf_history(redone_history, self.symbols)
+        self.history = history
+
+    async def filter_data(self):
+        week_tasks = [aggregate_yf_week(symbol) for symbol in self.symbols]
+        day_tasks = [aggregate_yf_day(symbol) for symbol in self.symbols]
+
+        self.weeks = await asy.gather(*week_tasks)
+        self.days = await asy.gather(*day_tasks)
+
 
 
 

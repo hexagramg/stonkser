@@ -99,7 +99,7 @@ async def insert_daily_vantage(symbol: str, vantage_daily: dict, sequrity=None):
     return None
 
 @extract_symbol
-async def aggreagate_daily_month(symbol: str, sequrity=None):
+async def aggreagate_daily_week(symbol: str, sequrity=None):
 
     pipeline = [
         {'$match': {
@@ -255,6 +255,76 @@ async def find_last_record(symbol, sequrity=None) -> Union[dict, None]:
         return None
 
 
+async def save_yf_history(data, symbols):
+    clean = await DB['yfinance_time_series'].delete_many(
+        {
+            'symbol': {
+                '$in': symbols
+            }
+        }
+    )
+    inserted = await DB['yfinance_time_series'].insert_many(data)
+    return inserted
+
+
+async def aggregate_yf_week(symbol, length=250):
+    pipeline = [
+        {
+            '$match': {
+            'symbol': symbol
+        }},
+        {
+            '$group': {
+                '_id': {
+                    '$dateFromParts': {
+                        'isoWeekYear': {
+                            '$isoWeekYear': '$date'
+                        },
+                        'isoWeek': {
+                            '$isoWeek': '$date'
+                        },
+                    }
+                },
+                'close': {
+                    '$avg': '$Close'
+                },
+                'dividends': {
+                    '$sum': '$Dividends'
+                },
+                'high': {
+                    '$avg': '$High'
+                },
+                'low': {
+                    '$avg': '$Low'
+                }
+            }
+        },
+        {
+            '$sort':{
+                '_id': -1
+            }
+        }
+    ]
+    cursor = DB['yfinance_time_series'].aggregate(pipeline)
+    aggregated = await cursor.to_list(length=length)
+    return aggregated
+
+
+async def aggregate_yf_day(symbol, length=250):
+    pipeline = [
+        {
+            '$match': {
+                'symbol': symbol
+            }},
+        {
+            '$sort': {
+                '_id': -1
+            }
+        }
+    ]
+    cursor = DB['yfinance_time_series'].aggregate(pipeline)
+    aggregated = await cursor.to_list(length=length)
+    return aggregated
 
 
 
