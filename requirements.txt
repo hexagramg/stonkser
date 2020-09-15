@@ -1,0 +1,26 @@
+aiohttp==3.6.2
+alpha-vantage==2.2.0
+async-timeout==3.0.1
+attrs==19.3.0
+certifi==2020.6.20
+chardet==3.0.4
+dateutils==0.6.8
+idna==2.10
+lxml==4.5.2
+motor==2.1.0
+multidict==4.7.6
+multitasking==0.0.9
+numpy==1.19.1
+pandas==1.0.5
+patsy==0.5.1
+pymongo==3.10.1
+python-dateutil==2.8.1
+pytz==2020.1
+PyYAML==5.3.1
+requests==2.24.0
+scipy==1.5.2
+six==1.15.0
+statsmodels==0.11.1
+urllib3==1.25.10
+yarl==1.4.2
+yfinance @ git+https://github.com/hexagramg/yfinance.git@4d56f4b4d133be79bec1da03f74d3ef6c5445913
