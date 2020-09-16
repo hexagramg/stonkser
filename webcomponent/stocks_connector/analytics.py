@@ -6,6 +6,7 @@ from .main import *
 from storagecomponent.connector import *
 from functools import partial
 from settingscomponent.loader import loop
+import pandas as pd
 COMPACT_DELTA = dt.timedelta(days=99)
 TIMEZONE = dt.timezone(dt.timedelta(hours=3))
 LAG = dt.timedelta(minutes=15)
@@ -48,9 +49,10 @@ class DataGetter:
 
 class DataAnalysis:
     @classmethod
-    async def create(cls, secondary_data: List[dict]):
+    async def create(cls, secondary_data: List[dict], with_preload=True):
         self = cls(secondary_data)
-        await self.preload()
+        if with_preload:
+            await self.preload()
         await self.preload_data_pipe()
         return self
 
@@ -139,6 +141,12 @@ class DataAnalysis:
         self.data_weekly = await apply_filter(aggreagate_daily_week)
         self.data_daily = await apply_filter(aggregate_daily)
         self.data_dividends = await apply_filter(aggregate_dividends, date_inclusion=True)
+        self.dw_df = {}
+        self.dd_df = {}
+        for index, sec_data in enumerate(self.secondary):
+            name = sec_data['name']
+            self.dw_df[name] = pd.DataFrame(self.data_weekly[index])
+            self.dd_df[name] = pd.DataFrame(self.data_daily[index])
 
     async def calc_stats(self):
         def ret_dict(weekly_ts, daily_ts) -> dict:
@@ -206,6 +214,7 @@ class DataAnalysisYF:
         self = cls(secondary_data)
         await self.preload()
         await self.filter_data()
+        await self.calc_stats()
         return self
 
     def __init__(self, secondary_data: List[dict]):
@@ -227,12 +236,62 @@ class DataAnalysisYF:
         inserted = await save_yf_history(redone_history, self.symbols)
         self.history = history
 
-    async def filter_data(self):
-        week_tasks = [aggregate_yf_week(symbol) for symbol in self.symbols]
-        day_tasks = [aggregate_yf_day(symbol) for symbol in self.symbols]
 
+    async def filter_data(self):
+        async def _to_df(func):
+            data = await func
+            return pd.DataFrame(data)
+
+        week_tasks = [_to_df(aggregate_yf_week(symbol)) for symbol in self.symbols]
+        day_tasks = [_to_df(aggregate_yf_day(symbol)) for symbol in self.symbols]
+        month_tasks = [_to_df(aggregate_yf_month(symbol)) for symbol in self.symbols]
         self.weeks = await asy.gather(*week_tasks)
         self.days = await asy.gather(*day_tasks)
+        self.months = await asy.gather(*month_tasks)
+
+    async def calc_stats(self):
+        self.stats = {}
+
+        def calc_relative(buy, current):
+            return (current - buy)/buy + 1
+
+        for index, info in enumerate(self.secondary_data):
+            name = info['name']
+
+            daily = self.days[index]
+            weekly = self.weeks[index]
+            monthly = self.months[index]
+            buy_price = info['buy']
+            price = daily.iloc[0].Close
+            amount = info['amount']
+            if name not in self.stats:
+                self.stats[name] = {}
+            self.stats[name]['buy_relative'] = calc_relative(buy_price, price)
+            self.stats[name]['buy_difference'] = price - buy_price
+            self.stats[name]['buy_absolute'] = (price - buy_price)*amount
+            if 'date_of_buy' in info:
+                date_of_buy = parser.parse(info['date_of_buy'])
+                dividends = await aggregate_dividends_yf(name, date_of_buy)
+            else:
+                dividends = 0
+            self.stats[name]['roi_relative'] = calc_relative(buy_price, price+dividends)
+            self.stats[name]['roi_difference'] = price + dividends - buy_price
+            self.stats[name]['roi_absolute'] = (price + dividends - buy_price)*amount
+
+        buffer_array = []
+        for symbol, stats in self.stats.items():
+            buffer_array.append(stats)
+
+        self.stats_df = pd.DataFrame(buffer_array, index=self.symbols)
+
+
+
+
+
+
+
+
+
 
 
 

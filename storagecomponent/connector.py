@@ -5,6 +5,8 @@ import dateutil.parser as parser
 import asyncio
 from datetime import datetime
 from pymongo import ReturnDocument
+import numpy as np
+
 DB_key = SETTINGS['DB']
 CLIENT = mot_asy.AsyncIOMotorClient(DB_key)
 DB = CLIENT['rewampStock']
@@ -267,11 +269,57 @@ async def save_yf_history(data, symbols):
     return inserted
 
 
+async def aggregate_yf_month(symbol, length=250):
+    pipeline = [
+        {
+            '$match': {
+                'symbol': symbol,
+                'Open': {
+                    '$ne': np.nan
+                }
+            }},
+        {
+            '$group': {
+                '_id': {
+                    '$dateFromParts': {
+                        'year': {
+                            '$year': '$date'},
+                        'month': {
+                            '$month': '$date'}
+                    }
+                },
+                'close': {
+                    '$avg': '$Close'
+                },
+                'dividends': {
+                    '$sum': '$Dividends'
+                },
+                'high': {
+                    '$avg': '$High'
+                },
+                'low': {
+                    '$avg': '$Low'
+                }
+            }
+        },
+        {
+            '$sort':{
+                '_id': -1
+            }
+        }
+    ]
+    cursor = DB['yfinance_time_series'].aggregate(pipeline)
+    aggregated = await cursor.to_list(length=length)
+    return aggregated
+
 async def aggregate_yf_week(symbol, length=250):
     pipeline = [
         {
             '$match': {
-            'symbol': symbol
+            'symbol': symbol,
+            'Open': {
+                '$ne': np.nan
+            }
         }},
         {
             '$group': {
@@ -314,7 +362,10 @@ async def aggregate_yf_day(symbol, length=250):
     pipeline = [
         {
             '$match': {
-                'symbol': symbol
+                'symbol': symbol,
+                'Open': {
+                    '$ne': np.nan
+                }
             }},
         {
             '$sort': {
@@ -325,6 +376,37 @@ async def aggregate_yf_day(symbol, length=250):
     cursor = DB['yfinance_time_series'].aggregate(pipeline)
     aggregated = await cursor.to_list(length=length)
     return aggregated
+
+async def aggregate_dividends_yf(symbol, date):
+
+    pipeline = [
+        {
+            '$match': {
+                'symbol': symbol,
+                'date': {
+                    '$gt': date
+                },
+                'Open': {
+                    '$ne': np.nan
+                }
+            }},
+        {
+            '$group': {
+                '_id': 0,
+                'dividends': {
+                    '$sum': '$Dividends'
+                }
+
+            }
+        }
+    ]
+
+    cursor = DB['yfinance_time_series'].aggregate(pipeline)
+    aggregated = await cursor.to_list(length=1)
+    if aggregated:
+        return aggregated[0]['dividends']
+
+    return 0
 
 
 

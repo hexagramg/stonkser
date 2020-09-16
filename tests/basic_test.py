@@ -6,4 +6,3 @@ from settingscomponent.loader import SEQURITIES
 loop = asyncio.get_event_loop()
 data = loop.run_until_complete(DataAnalysisYF.create(SEQURITIES['moex']))
 
-
