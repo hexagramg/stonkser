@@ -7,6 +7,9 @@ from storagecomponent.connector import *
 from functools import partial
 from settingscomponent.loader import loop
 import pandas as pd
+from webcomponent.stocks_connector.ana_dict import *
+
+
 COMPACT_DELTA = dt.timedelta(days=99)
 TIMEZONE = dt.timezone(dt.timedelta(hours=3))
 LAG = dt.timedelta(minutes=15)
@@ -253,7 +256,7 @@ class DataAnalysisYF:
         self.stats = {}
 
         def calc_relative(buy, current):
-            return (current - buy)/buy + 1
+            return (current - buy)*100/buy
 
         for index, info in enumerate(self.secondary_data):
             name = info['name']
@@ -277,13 +280,19 @@ class DataAnalysisYF:
             self.stats[name]['roi_relative'] = calc_relative(buy_price, price+dividends)
             self.stats[name]['roi_difference'] = price + dividends - buy_price
             self.stats[name]['roi_absolute'] = (price + dividends - buy_price)*amount
+            self.stats[name]['div'] = dividends*amount
+            self.stats[name]['absolute'] = str(round(price*amount, 2))+'/'
 
         buffer_array = []
         for symbol, stats in self.stats.items():
-            buffer_array.append(stats)
+            mod_stats = {}
+
+            for key in rows_list:
+                mod_stats[translation_dict[key]] = stats[key]
+
+            buffer_array.append(mod_stats)
 
         self.stats_df = pd.DataFrame(buffer_array, index=self.symbols)
-
 
 
 
