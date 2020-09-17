@@ -5,7 +5,13 @@
     <title>{{ title }}</title>
 </head>
 <body>
-    <h2>probably a test of a table</h2>
-     {{ test_table}}
+<h2>
+    Отчет по брокерским счетам
+</h2>
+
+    {% for seq, data in roi_tables %}
+        <h3>Портфель {{ seq }}</h3>
+        {{ data }}
+    {%  endfor %}
 </body>
 </html>

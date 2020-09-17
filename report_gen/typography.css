@@ -100,6 +100,24 @@ tbody tr:nth-child(even) td,
 tbody tr.even td  {
   background: #e5ecf9;
 }
+tbody tr:nth-child(odd) td.plus,
+tbody tr.even td.plus  {
+  border: 3px solid #b3ecec;
+}
+tbody tr:nth-child(even) td.plus,
+tbody tr.even td.plus  {
+   border: 3px solid #33CCCC;
+}
+
+tbody tr:nth-child(odd) td.minus,
+tbody tr.even td.minus  {
+  border: 3px solid #E5A0AA;
+}
+tbody tr:nth-child(even) td.minus,
+tbody tr.even td.minus  {
+  border: 3px solid #CB4154;
+}
+
 tfoot       { font-style: italic; }
 caption     { background: #eee; }
 
