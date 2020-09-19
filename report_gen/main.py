@@ -34,7 +34,7 @@ for seq, data in zip(seq_lots, data_seq):
         value = td.string
         try:
             number = float(value)
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             if len(value) > 1:
                 if value[-1] == '/':
                     td.string = value[:-1]

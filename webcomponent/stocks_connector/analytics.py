@@ -281,7 +281,18 @@ class DataAnalysisYF:
             self.stats[name]['roi_difference'] = price + dividends - buy_price
             self.stats[name]['roi_absolute'] = (price + dividends - buy_price)*amount
             self.stats[name]['div'] = dividends*amount
-            self.stats[name]['absolute'] = str(round(price*amount, 2))+'/'
+            self.stats[name]['absolute'] = price*amount
+            weekly['abs_'+name] = weekly['close']*amount
+            weekly['_id'] = weekly['_id'].astype(np.dtype('M'))
+            buffer = weekly[['_id', 'abs_'+name]]
+            if buffer.index.size > 5:
+                try:
+                    self.weekly_summary = self.weekly_summary.merge(buffer, on='_id')
+                except AttributeError as e:
+                    self.weekly_summary = weekly[['_id', 'abs_'+name]]
+
+        self.weekly_summary = self.weekly_summary.set_index('_id')
+        self.weekly_summary['absolute'] = self.weekly_summary.sum(axis=1)
 
         buffer_array = []
         for symbol, stats in self.stats.items():
@@ -293,8 +304,29 @@ class DataAnalysisYF:
             buffer_array.append(mod_stats)
 
         self.stats_df = pd.DataFrame(buffer_array, index=self.symbols)
+        self.stats_df.sort_values(by=[translation_dict['absolute']], inplace=True)
 
+        def calc_total():
+            total_row = []
+            translated_abs = translation_dict['absolute']
+            abs = self.stats_df[translated_abs]
+            abs_sum = abs.sum()
+            for column_name in self.stats_df:
+                column = self.stats_df[column_name]
+                if '%' in column_name:
+                    top = column*abs
+                    total_row.append(top.sum()/abs_sum)
+                elif 'ye.' in column_name:
+                    total_row.append(column.sum())
+                else:
+                    total_row.append(0)
+            total_df = pd.DataFrame([total_row], index=['Итог'], columns=self.stats_df.columns)
+            self.stats_df = self.stats_df.append(total_df)
 
+        calc_total()
+        for colname in exclude_coloring:
+            translated = translation_dict[colname]
+            self.stats_df[translated] = self.stats_df[translated].map(lambda x: str(round(x, 2))+'/')
 
 
 
