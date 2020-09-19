@@ -1,10 +1,15 @@
 from alpha_vantage import async_support as vasy
 import asyncio
 import aiohttp
+import aiomoex
+import pandas as pd
 from typing import List, Union, Tuple
 import yfinance
 from alpha_vantage.async_support.timeseries import TimeSeries
-from settingscomponent.loader import SETTINGS, loop
+from settingscomponent.loader import SETTINGS, loop, SEQURITIES
+from datetime import datetime, timedelta
+from dateutil import relativedelta
+
 API = SETTINGS['VANTAGE']
 LIMIT = 5
 BLOCKER = asyncio.locks.Semaphore(LIMIT)
@@ -79,3 +84,73 @@ class YFinanceConnector:
             data_in_dict.append(buffer)
 
         return data_in_dict
+
+columns = ("BOARDID", "TRADEDATE", "CLOSE", "VOLUME", "VALUE", "YIELD"),
+
+class moex_connector:
+    def __init__(self, secondary: List[dict], market):
+        self.secondary = secondary
+        self.market = market
+
+    @staticmethod
+    async def _get_board_hist(session, name, board, market, start, end):
+        return await aiomoex.get_board_history(session, security=name, board=board,
+                                               market=market, columns=None, start=start, end=end)
+    @staticmethod
+    async def _init_issclient(session, request_url, args= None):
+
+        iss = aiomoex.ISSClient(session, request_url, args)
+        data = await iss.get()
+        return data
+
+
+    async def _get_coupons(self, session, name):
+
+        request_url = "https://iss.moex.com/iss/statistics/engines/stock/markets/bonds/bondization/" + name + '.json'
+        return await self._init_issclient(session, request_url)
+
+    async def _get_dividends(self, session, name):
+
+        request_url = "http://iss.moex.com/iss/securities/" + name + "/dividends.json"
+        return await self._init_issclient(session, request_url)
+
+    async def get_board_hists(self, start=None, end=None):
+        format = '%Y-%m-%d'
+        if start is None:
+            now = datetime.now()
+            delta = relativedelta.relativedelta(years=5)
+            calc_start = now - delta
+            start = calc_start.strftime(format)
+        if end is None:
+            now = datetime.now()
+            end = now.strftime(format)
+        async with aiohttp.ClientSession() as session:
+            tasks = [self._get_board_hist(session, second['name'], second['board'], self.market, start, end)
+                     for second in self.secondary]
+
+            data_list = await asyncio.gather(*tasks)
+            return data_list
+
+    async def get_dividends(self):
+        if self.market == 'shares':
+            async with aiohttp.ClientSession() as session:
+                tasks = [self._get_dividends(session, second['name'])
+                         for second in self.secondary]
+                data_list = await asyncio.gather(*tasks)
+                return data_list
+        else:
+            return None
+
+    async def get_coupons(self):
+        if self.market == 'bonds':
+            async with aiohttp.ClientSession() as session:
+                tasks = [self._get_coupons(session, second['name'])
+                         for second in self.secondary]
+                data_list = await asyncio.gather(*tasks)
+                return data_list
+        else:
+            return None
+
+
+
+
