@@ -409,6 +409,42 @@ async def aggregate_dividends_yf(symbol, date):
     return 0
 
 
+async def find_bondization(info: List[str]):
+    pipeline = [{
+        '$match': {
+            'isin': {
+                '$in': info
+            }
+        }},{
+        '$group': {
+            '_id': '$isin',
+            'coupons': {
+                '$push': {
+                    'date': '$coupondate',
+                    'prc': '$valueprc',
+                    'value_rub': '$value_rub'
+                }
+            }
+        }
+    }]
+    cursor = DB['coupons'].aggregate(pipeline)
+    aggregated = await cursor.to_list(length=len(info))
+    if aggregated:
+        return aggregated
 
+    return None
+
+
+async def insert_bondization(info: dict):
+    if 'amortizations' in info:
+        cursor_amort = await DB['coupons'].insert_many(info['amortizations'])
+    else:
+        cursor_amort = None
+    if 'coupons' in info:
+        cursor_coupons = await DB['coupons'].insert_many(info['coupons'])
+    else:
+        cursor_coupons = None
+
+    return (cursor_coupons,cursor_amort)
 
 

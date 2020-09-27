@@ -328,6 +328,140 @@ class DataAnalysisYF:
             translated = translation_dict[colname]
             self.stats_df[translated] = self.stats_df[translated].map(lambda x: str(round(x, 2))+'/')
 
+class BaseMoexAnalysis:
+    """
+        Base class for analysis using moex connector
+        you must declare self.market for this solution to work !!!
+    """
+    @classmethod
+    async def create(cls, second: List[dict], market: str = 'shares'):
+        """
+        Method for object creation
+        Args:
+            second: list of symbols from the config
+            market: Either shares or bonds for now
+
+        Returns:
+            base object
+        """
+        self = cls(second, market)
+        await self._get_historical_data()
+        return self
+
+    def __init__(self, secondary_data: List[dict], market):
+        self.market = market
+        self.secondary_data = secondary_data
+        self.connector = moex_connector(secondary_data, self.market)
+
+    async def _get_historical_data(self):
+        data_list = await self.connector.get_board_hists()
+        self.hist_df = [pd.DataFrame(data) for data in data_list]
+
+
+
+async def calc_stats(secondary_data, _daily, _weekly, _monthly):
+    stats = {}
+    symbols = []
+    def calc_relative(buy, current):
+        return (current - buy)*100/buy
+
+    for index, info in enumerate(secondary_data):
+        name = info['name']
+        if name not in symbols:
+            symbols.append(name)
+        daily = _daily[index]
+        weekly = _weekly[index]
+        monthly = _monthly[index]
+        buy_price = info['buy']
+        price = daily.iloc[0].Close
+        amount = info['amount']
+        if name not in stats:
+            stats[name] = {}
+        stats[name]['buy_relative'] = calc_relative(buy_price, price)
+        stats[name]['buy_difference'] = price - buy_price
+        stats[name]['buy_absolute'] = (price - buy_price)*amount
+        if 'date_of_buy' in info:
+            date_of_buy = parser.parse(info['date_of_buy'])
+            dividends = await aggregate_dividends_yf(name, date_of_buy)
+        else:
+            dividends = 0
+        stats[name]['roi_relative'] = calc_relative(buy_price, price+dividends)
+        stats[name]['roi_difference'] = price + dividends - buy_price
+        stats[name]['roi_absolute'] = (price + dividends - buy_price)*amount
+        stats[name]['div'] = dividends*amount
+        stats[name]['absolute'] = price*amount
+        weekly['abs_'+name] = weekly['close']*amount
+        weekly['_id'] = weekly['_id'].astype(np.dtype('M'))
+        buffer = weekly[['_id', 'abs_'+name]]
+        if buffer.index.size > 5:
+            try:
+                weekly_summary = weekly_summary.merge(buffer, on='_id')
+            except AttributeError as e:
+                weekly_summary = weekly[['_id', 'abs_'+name]]
+
+    weekly_summary = weekly_summary.set_index('_id')
+    weekly_summary['absolute'] = weekly_summary.sum(axis=1)
+
+    buffer_array = []
+    for symbol, stats in stats.items():
+        mod_stats = {}
+
+        for key in rows_list:
+            mod_stats[translation_dict[key]] = stats[key]
+
+        buffer_array.append(mod_stats)
+
+    stats_df = pd.DataFrame(buffer_array, index=symbols)
+    stats_df.sort_values(by=[translation_dict['absolute']], inplace=True)
+
+    def calc_total(stats_df):
+        total_row = []
+        translated_abs = translation_dict['absolute']
+        abs = stats_df[translated_abs]
+        abs_sum = abs.sum()
+        for column_name in stats_df:
+            column = stats_df[column_name]
+            if '%' in column_name:
+                top = column*abs
+                total_row.append(top.sum()/abs_sum)
+            elif 'ye.' in column_name:
+                total_row.append(column.sum())
+            else:
+                total_row.append(0)
+        total_df = pd.DataFrame([total_row], index=['Итог'], columns=stats_df.columns)
+        stats_df = stats_df.append(total_df)
+
+    calc_total(stats_df)
+    for colname in exclude_coloring:
+        translated = translation_dict[colname]
+        self.stats_df[translated] = self.stats_df[translated].map(lambda x: str(round(x, 2))+'/')
+
+
+class SharesMoexAnalysis(BaseMoexAnalysis):
+
+    @classmethod
+    async def create(cls, second: List[dict], market: str = 'shares'):
+        base = await super(SharesMoexAnalysis, cls).create(second, market)
+        await base._get_dividends()
+        return base
+
+
+
+    async def _get_dividends(self):
+        dividends: List[dict] = await self.connector.get_dividends()
+        self.dividends_df = [pd.DataFrame([dividend for dividend in symbol['dividends']]) for symbol in dividends]
+
+    def calc_stats(self):
+
+        stat_list = []
+        col_tuple = ()
+
+
+
+
+
+
+
 
 
 

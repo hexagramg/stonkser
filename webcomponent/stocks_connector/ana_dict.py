@@ -7,6 +7,6 @@ translation_dict = {
     'div': 'Дивиденды, ye.'
 }
 
-rows_list = [ 'buy_relative', 'roi_relative', 'div', 'buy_absolute', 'roi_absolute', 'absolute']
+rows_list = ('buy_relative', 'roi_relative', 'div', 'buy_absolute', 'roi_absolute', 'absolute')
 
 exclude_coloring = ['absolute']

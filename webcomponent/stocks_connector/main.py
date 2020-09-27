@@ -124,17 +124,44 @@ class moex_connector:
         if end is None:
             now = datetime.now()
             end = now.strftime(format)
+
         async with aiohttp.ClientSession() as session:
-            tasks = [self._get_board_hist(session, second['name'], second['board'], self.market, start, end)
+
+            tasks = [self._get_board_hist(session, second['name'],
+                    second['board'], self.market, start, end)
                      for second in self.secondary]
 
             data_list = await asyncio.gather(*tasks)
-            return data_list
+        return data_list
 
     async def get_dividends(self):
         if self.market == 'shares':
             async with aiohttp.ClientSession() as session:
-                tasks = [self._get_dividends(session, second['name'])
+                async def skip_dividend(secondary):
+                    """
+                    Skip downloading dividends from moex if skip_d flag is set
+                    Args:
+                        secondary: symbol from configuration
+                    Returns:
+                        object with empty dividends, for now
+                    """
+
+                    async def return_empty():
+                        """
+                        This method is a placeholder for future loading of custom dividends
+                        Returns:
+                            empty for now
+                        """
+                        return {'dividends': []}
+
+                    if 'skip_d' not in secondary:
+                        dividends = await self._get_dividends(session, secondary['name'])
+                    else:
+                        dividends = await return_empty()
+
+                    return dividends
+
+                tasks = [skip_dividend(second)
                          for second in self.secondary]
                 data_list = await asyncio.gather(*tasks)
                 return data_list
