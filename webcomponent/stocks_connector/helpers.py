@@ -21,12 +21,12 @@ def calc_base(buy_price, price, amount, dividends):
     return base
 
 
-def base_dict_to_df(stats: dict, symbols: list):
+def base_dict_to_df(stats: dict, symbols: list, _rows_list=rows_list):
     buffer_array = []
     for symbol, stats in stats.items():
         mod_stats = {}
 
-        for key in rows_list:
+        for key in _rows_list:
             mod_stats[translation_dict[key]] = stats[key]
 
         buffer_array.append(mod_stats)
@@ -52,4 +52,9 @@ def calc_total(stats_df):
             total_row.append(0)
     total_df = pd.DataFrame([total_row], index=['Итог'], columns=stats_df.columns)
     stats_df = stats_df.append(total_df)
+    for colname in exclude_coloring:
+        #POTENTIALLY HAZARDOUS
+        #TODO MAKE FAILSAFE
+        translated = translation_dict[colname]
+        stats_df[translated] = stats_df[translated].map(lambda x: str(round(x, 2)) + '/')
     return stats_df

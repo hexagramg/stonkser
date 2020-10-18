@@ -292,7 +292,7 @@ class DataAnalysisYF:
 
         self.stats_df = base_dict_to_df(self.stats, self.symbols)
 
-        def calc_total():
+        def calc_total_():
             total_row = []
             translated_abs = translation_dict['absolute']
             abs = self.stats_df[translated_abs]
@@ -309,10 +309,7 @@ class DataAnalysisYF:
             total_df = pd.DataFrame([total_row], index=['Итог'], columns=self.stats_df.columns)
             self.stats_df = self.stats_df.append(total_df)
 
-        calc_total()
-        for colname in exclude_coloring:
-            translated = translation_dict[colname]
-            self.stats_df[translated] = self.stats_df[translated].map(lambda x: str(round(x, 2))+'/')
+        self.stats_df = calc_total(self.stats_df)
 
 class BaseMoexAnalysis:
     """
@@ -338,6 +335,7 @@ class BaseMoexAnalysis:
         self.market = market
         self.secondary_data = secondary_data
         self.connector = moex_connector(secondary_data, self.market)
+        self.stats = {}
 
     async def _get_historical_data(self):
         data_list = await self.connector.get_board_hists()
@@ -350,6 +348,7 @@ class SharesMoexAnalysis(BaseMoexAnalysis):
     async def create(cls, second: List[dict], market: str = 'shares'):
         base = await super(SharesMoexAnalysis, cls).create(second, market)
         await base._get_dividends()
+        base.calc_stats()
         return base
 
 
@@ -360,9 +359,6 @@ class SharesMoexAnalysis(BaseMoexAnalysis):
 
 
     def calc_stats(self):
-
-        stat_list = []
-        col_tuple = ()
         def calc_dividends(div_df, date_of_buy: datetime):
             """
             returns dividend sum for selected symbol
@@ -379,26 +375,75 @@ class SharesMoexAnalysis(BaseMoexAnalysis):
             dividends = div_df[div_df['date']>date_of_buy]['value'].sum()
             return dividends
 
+        symb_list = []
+        for index, (div_df, hist_df, sec_data) in enumerate(zip(self.dividends_df, self.hist_df, self.secondary_data)):
+            if "date_of_buy" in sec_data:
+                date = parser.parse(sec_data['date_of_buy'])
+                dividends = calc_dividends(div_df, date)
+            else:
+                dividends = 0
+
+            buy_price = sec_data['buy']
+            amount = sec_data['amount']
+            name = sec_data['name']
+            current_price = hist_df.iloc[-1]['CLOSE']
+
+            symb_list.append(name)
+
+            self.stats[name] = calc_base(buy_price, current_price, amount, dividends)
+
+        self.stats_df = calc_total(base_dict_to_df(self.stats, symb_list))
 
 
 
+class BondsMoexAnalysis(BaseMoexAnalysis):
+
+    @classmethod
+    async def create(cls, second: List[dict], market: str = 'bonds'):
+        base = await super(BondsMoexAnalysis, cls).create(second, market)
+        await base._get_coupons()
+        base.calc_stats()
+        return base
+
+    async def _get_coupons(self):
+        coupons: List[dict] = await self.connector.get_coupons()
+        self.coupons_df = [pd.DataFrame([coup for coup in coupon['coupons']]) for coupon in coupons]
 
 
+    def calc_stats(self):
+        def next_coupon(coupon_df):
+            now = datetime.now().date()
+            if 'date' not in coupon_df:
+                coupon_df['date'] = coupon_df['coupondate'].map(lambda x: parser.parse(x).date())
 
+            exact = coupon_df[coupon_df['date'] > now].iloc[0]
+            return exact.to_dict()
 
+        def calc_bond(buy_price, current_price, coupon_prc, coupon_date, facevalue, amount):
 
+            buffer = {
+                'buy': buy_price,
+                'current': current_price,
+                'buy_yield': coupon_prc/buy_price*100,
+                'current_yield': coupon_prc/current_price*100,
+                'coupon_date': coupon_date,
+                'coupon': facevalue*amount*coupon_prc/100,
+                'absolute': buy_price * amount
+            }
+            return buffer
 
+        symb_list = []
+        for index, (coupon_df, hist_df, sec_data) in enumerate(zip(self.coupons_df, self.hist_df, self.secondary_data)):
+            next_coup = next_coupon(coupon_df)
+            buy_price = sec_data['buy']
+            amount = sec_data['amount']
+            name = next_coup['name']
+            current_price = hist_df.iloc[-1]['CLOSE']
+            coupon_prc = next_coup['valueprc']
+            facevalue = next_coup['facevalue']
+            coupon_date = next_coup['date']
+            symb_list.append(name)
+            self.stats[name] = calc_bond(buy_price, current_price, coupon_prc, coupon_date, facevalue, amount)
 
-
-
-
-
-
-
-
-
-
-
-
-
+        self.stats_df = calc_total(base_dict_to_df(self.stats, symb_list, rows_list_bonds))
 

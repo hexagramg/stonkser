@@ -4,28 +4,43 @@ import pandas as pd
 import os
 path = os.path.abspath('../')
 os.chdir(path)
-from webcomponent.stocks_connector.analytics import DataAnalysisYF
+from webcomponent.stocks_connector.analytics import DataAnalysisYF, SharesMoexAnalysis
 import asyncio
 from settingscomponent.loader import SEQURITIES
 import numpy as np
 from bs4 import BeautifulSoup as bs
-seq_lots = ['moex', 'inter']
+seq_lots_YF = ['international']
+seq_lots_M = ['shares']
 
+basis = ['MOEX', 'INTERNATIONAL']
 
 env = Environment(loader=FileSystemLoader('./report_gen'))
 template = env.get_template('template.html')
 loop = asyncio.get_event_loop()
 
 
-async def get_sequrities():
-    tasks = [DataAnalysisYF.create(SEQURITIES[lot]) for lot in seq_lots]
+def get_sequrities_YF():
+
+    tasks = [DataAnalysisYF.create(SEQURITIES[lot]) for lot in seq_lots_YF]
+    return tasks
+
+def get_sequrities_M():
+
+    tasks = [SharesMoexAnalysis.create(SEQURITIES[lot]) for lot in seq_lots_M]
+    return tasks
+
+async def fetch_tasks(tasks):
+
     data = await asyncio.gather(*tasks)
     return data
 
-data_seq = loop.run_until_complete(get_sequrities())
+to_do = fetch_tasks(get_sequrities_M()+get_sequrities_YF())
+
+data_seq = loop.run_until_complete(to_do)
+
 
 formatted_data = []
-for seq, data in zip(seq_lots, data_seq):
+for seq, data in zip(basis, data_seq):
     html = data.stats_df.to_html(float_format=lambda x: '%.2f' % x)
     souped_table: bs = bs(html)
 
@@ -53,7 +68,6 @@ for seq, data in zip(seq_lots, data_seq):
 template_var = {
     'title': 'TESSSST',
     'roi_tables': formatted_data,
-    'seq': seq_lots
 }
 html_out = template.render(template_var)
 wp.HTML(string=html_out).write_pdf("report.pdf", stylesheets=['report_gen/typography.css'])
