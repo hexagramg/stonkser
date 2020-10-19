@@ -219,6 +219,7 @@ class DataAnalysisYF:
         await self.preload()
         await self.filter_data()
         await self.calc_stats()
+        self.stat_cols = cols_list_shares
         return self
 
     def __init__(self, secondary_data: List[dict]):
@@ -278,6 +279,11 @@ class DataAnalysisYF:
 
             self.stats[name] = calc_base(buy_price, price, amount, dividends)
 
+            if not hasattr(self, 'weighted_hist'):
+                self.weighted_hist = calc_weighed_hist(daily, 'Close', 'date', name, amount)
+            else:
+                self.weighted_hist = calc_weighed_hist(daily, 'Close', 'date', name, amount, self.weighted_hist)
+
             weekly['abs_'+name] = weekly['close']*amount
             weekly['_id'] = weekly['_id'].astype(np.dtype('M'))
             buffer = weekly[['_id', 'abs_'+name]]
@@ -292,24 +298,8 @@ class DataAnalysisYF:
 
         self.stats_df = base_dict_to_df(self.stats, self.symbols)
 
-        def calc_total_():
-            total_row = []
-            translated_abs = translation_dict['absolute']
-            abs = self.stats_df[translated_abs]
-            abs_sum = abs.sum()
-            for column_name in self.stats_df:
-                column = self.stats_df[column_name]
-                if '%' in column_name:
-                    top = column*abs
-                    total_row.append(top.sum()/abs_sum)
-                elif 'ye.' in column_name:
-                    total_row.append(column.sum())
-                else:
-                    total_row.append(0)
-            total_df = pd.DataFrame([total_row], index=['Итог'], columns=self.stats_df.columns)
-            self.stats_df = self.stats_df.append(total_df)
-
         self.stats_df = calc_total(self.stats_df)
+        self.weighted_hist = add_weighted_stats(self.weighted_hist)
 
 class BaseMoexAnalysis:
     """
@@ -336,6 +326,7 @@ class BaseMoexAnalysis:
         self.secondary_data = secondary_data
         self.connector = moex_connector(secondary_data, self.market)
         self.stats = {}
+        self.w_history = []
 
     async def _get_historical_data(self):
         data_list = await self.connector.get_board_hists()
@@ -349,6 +340,7 @@ class SharesMoexAnalysis(BaseMoexAnalysis):
         base = await super(SharesMoexAnalysis, cls).create(second, market)
         await base._get_dividends()
         base.calc_stats()
+        base.stat_cols = cols_list_shares
         return base
 
 
@@ -376,6 +368,7 @@ class SharesMoexAnalysis(BaseMoexAnalysis):
             return dividends
 
         symb_list = []
+
         for index, (div_df, hist_df, sec_data) in enumerate(zip(self.dividends_df, self.hist_df, self.secondary_data)):
             if "date_of_buy" in sec_data:
                 date = parser.parse(sec_data['date_of_buy'])
@@ -392,7 +385,18 @@ class SharesMoexAnalysis(BaseMoexAnalysis):
 
             self.stats[name] = calc_base(buy_price, current_price, amount, dividends)
 
+            #W_CLOSE stand s for weighted close and represents current absolute value at that point in time
+            if not hasattr(self, 'weighted_hist'):
+                self.weighted_hist = calc_weighed_hist(hist_df, 'CLOSE', 'TRADEDATE', name, amount)
+            else:
+                self.weighted_hist = calc_weighed_hist(hist_df, 'CLOSE', 'TRADEDATE', name, amount, self.weighted_hist)
+
+
+
+
         self.stats_df = calc_total(base_dict_to_df(self.stats, symb_list))
+
+        self.weighted_hist = add_weighted_stats(self.weighted_hist)
 
 
 
@@ -403,6 +407,7 @@ class BondsMoexAnalysis(BaseMoexAnalysis):
         base = await super(BondsMoexAnalysis, cls).create(second, market)
         await base._get_coupons()
         base.calc_stats()
+        base.stat_cols = cols_list_bonds
         return base
 
     async def _get_coupons(self):
@@ -445,5 +450,10 @@ class BondsMoexAnalysis(BaseMoexAnalysis):
             symb_list.append(name)
             self.stats[name] = calc_bond(buy_price, current_price, coupon_prc, coupon_date, facevalue, amount)
 
-        self.stats_df = calc_total(base_dict_to_df(self.stats, symb_list, rows_list_bonds))
+            if not hasattr(self, 'weighted_hist'):
+                self.weighted_hist = calc_weighed_hist(hist_df, 'CLOSE', 'TRADEDATE', name, amount)
+            else:
+                self.weighted_hist = calc_weighed_hist(hist_df, 'CLOSE', 'TRADEDATE', name, amount, self.weighted_hist)
 
+        self.stats_df = calc_total(base_dict_to_df(self.stats, symb_list, cols_list_bonds))
+        self.weighted_hist = add_weighted_stats(self.weighted_hist)
