@@ -2,8 +2,8 @@ import weasyprint as wp
 from jinja2 import Environment, FileSystemLoader
 import pandas as pd
 import os
-path = os.path.abspath('../')
-os.chdir(path)
+#path = os.path.abspath('../')
+#os.chdir(path)
 from webcomponent.stocks_connector.analytics import DataAnalysisYF, SharesMoexAnalysis, BondsMoexAnalysis
 from webcomponent.stocks_connector.helpers import map_dict
 
@@ -11,11 +11,11 @@ import asyncio
 from settingscomponent.loader import SEQURITIES
 import numpy as np
 from bs4 import BeautifulSoup as bs
-seq_lots_YF = ['international']
-seq_lots_M = ['shares']
-seq_lots_B = ['bonds']
+seq_lots_YF = ['internationalM', 'internationalK', 'interactiveB']
+seq_lots_M = ['shares_M','shares_K']
+seq_lots_B = ['bonds_M', 'bonds_K']
 
-basis = ['BOMNDS_MOEX', 'MOEX', 'INTERNATIONAL']
+basis = ['BONDS_Mayya','BONDS_K', 'SHARES_Mayya', 'SHARES_K', 'INTERNATIONAL_Mayya','INTERNATIONAL_K', 'INTERACTIVE']
 
 env = Environment(loader=FileSystemLoader('./report_gen'))
 template = env.get_template('template.html')

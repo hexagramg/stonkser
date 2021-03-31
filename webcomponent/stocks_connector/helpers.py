@@ -76,8 +76,12 @@ def calc_weighed_hist(hist_df, close_col, tradedate_col, name, amount, global_we
     """
     # W_CLOSE stands for weighted close and represents current absolute value at that point in time
     hist_df['W_CLOSE'] = hist_df[close_col].map(lambda x: x * amount)
-    if not hist_df[tradedate_col]._is_datelike_mixed_type:
+    try:
         hist_df[tradedate_col] = hist_df[tradedate_col].map(lambda x: parser.parse(x))
+    except TypeError:
+        hist_df[tradedate_col] = hist_df[tradedate_col].map(lambda x: x.to_pydatetime())
+    #if not hist_df[tradedate_col]._is_datelike_mixed_type:
+    #   hist_df[tradedate_col] = hist_df[tradedate_col].map(lambda x: parser.parse(x))
 
     weighted_abs = {name: hist_df['W_CLOSE'].to_list()}
     weighted_df = pd.DataFrame(weighted_abs, index=hist_df[tradedate_col].to_list())

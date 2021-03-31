@@ -424,7 +424,7 @@ class BondsMoexAnalysis(BaseMoexAnalysis):
             exact = coupon_df[coupon_df['date'] > now].iloc[0]
             return exact.to_dict()
 
-        def calc_bond(buy_price, current_price, coupon_prc, coupon_date, facevalue, amount):
+        def calc_bond(buy_price, current_price, coupon_value, couporn_prc, coupon_date, facevalue, amount):
 
             buffer = {
                 'buy': buy_price,
@@ -432,8 +432,8 @@ class BondsMoexAnalysis(BaseMoexAnalysis):
                 'buy_yield': coupon_prc/buy_price*100,
                 'current_yield': coupon_prc/current_price*100,
                 'coupon_date': coupon_date,
-                'coupon': facevalue*amount*coupon_prc/100,
-                'absolute': buy_price * amount
+                'coupon': amount*coupon_value,
+                'absolute': buy_price * amount * 10
             }
             return buffer
 
@@ -444,11 +444,12 @@ class BondsMoexAnalysis(BaseMoexAnalysis):
             amount = sec_data['amount']
             name = next_coup['name']
             current_price = hist_df.iloc[-1]['CLOSE']
+            coupon_value = next_coup['value']
             coupon_prc = next_coup['valueprc']
             facevalue = next_coup['facevalue']
             coupon_date = next_coup['date']
             symb_list.append(name)
-            self.stats[name] = calc_bond(buy_price, current_price, coupon_prc, coupon_date, facevalue, amount)
+            self.stats[name] = calc_bond(buy_price, current_price, coupon_value, coupon_prc, coupon_date, facevalue, amount)
 
             if not hasattr(self, 'weighted_hist'):
                 self.weighted_hist = calc_weighed_hist(hist_df, 'CLOSE', 'TRADEDATE', name, amount)
